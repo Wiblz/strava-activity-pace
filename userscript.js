@@ -21,60 +21,34 @@ function calculatePace(timeString, kilometers) {
     totalSeconds = timeParts[0] * 60 + timeParts[1];
   }
 
-  // Calculate seconds per kilometer
-  const secondsPerKm = totalSeconds / kilometers;
-
-  // Convert back to MM:SS format
-  const paceMinutes = Math.floor(secondsPerKm / 60);
-  const paceSeconds = Math.round(secondsPerKm % 60);
-
-  // Format seconds with leading zero if needed
-  const formattedSeconds = paceSeconds.toString().padStart(2, "0");
-
-  return `${paceMinutes}:${formattedSeconds} min/km`;
+  return totalSeconds / kilometers;
 }
 
-function getPaceColor(paceString) {
-  // Extract minutes and seconds from the pace string (e.g. "4:30 min/km")
-  const match = paceString.match(/(\d+):(\d+)/);
-  if (!match) return "#000000"; // Default black
-
-  const minutes = parseInt(match[1]);
-  const seconds = parseInt(match[2]);
-  const totalSeconds = minutes * 60 + seconds;
-
+function getPaceColor(pace) {
   // Define pace thresholds (in seconds per km)
-  const excellentPace = 4 * 60;     // 4:00 min/km - very fast
-  const goodPace = 5 * 60;          // 5:00 min/km - good
-  const averagePace = 6 * 60;       // 6:00 min/km - average
-  const slowPace = 7 * 60;          // 7:00 min/km - slow
+  const excellentPace = 6 * 60;
+  const goodPace = 6 * 60 + 30;
+  const averagePace = 7 * 60;
+  const slowPace = 7 * 60 + 30;
 
   // Define colors for the gradient
-  if (totalSeconds <= excellentPace) {
-    return "#1E88E5";               // Blue for excellent pace
-  } else if (totalSeconds <= goodPace) {
-    return "#43A047";               // Green for good pace
-  } else if (totalSeconds <= averagePace) {
-    return "#FFA000";               // Orange for average pace
-  } else if (totalSeconds <= slowPace) {
-    return "#E53935";               // Red for slow pace
+  if (pace <= excellentPace) {
+    return "#8E24AA";
+  } else if (pace <= goodPace) {
+    return "#43A047";
+  } else if (pace <= averagePace) {
+    return "#ffd000";
+  } else if (pace <= slowPace) {
+    return "#e57035";
   } else {
-    return "#8E24AA";               // Purple for very slow pace
+    return "#E53935";
   }
 }
 
-(function($) {
+(function ($) {
   "use strict";
 
-  function processRows() {
-    const rows = $(".training-activity-row");
-
-    if (rows.length === 0) {
-      console.log("No rows found yet");
-      return false; // Signal that we didn't find rows
-    }
-
-    // Add the header for the pace column if it doesn't exist yet
+  function addPaceHeader() {
     const headerRow = $("table.activities thead tr");
     if (headerRow.length > 0 && headerRow.find(".col-pace").length === 0) {
       const elevHeader = headerRow.find("th.col-elev");
@@ -84,8 +58,18 @@ function getPaceColor(paceString) {
       paceHeader.append(paceSortButton);
       elevHeader.after(paceHeader);
     }
+  }
 
-    rows.each(function() {
+  function processRows() {
+    // Add the header for the pace column if it doesn't exist yet
+    addPaceHeader();
+
+    // Process only rows that don't have pace cells yet
+    const unprocessedRows = $(".training-activity-row").filter(function () {
+      return $(this).find(".col-pace").length === 0;
+    });
+
+    unprocessedRows.each(function () {
       // Check if the activity is a run
       const activityType = $(this).find("td.col-type").text().trim();
 
@@ -95,46 +79,45 @@ function getPaceColor(paceString) {
 
       const pace = calculatePace(time, distance);
 
-      // Check if we've already added a pace cell to this row
-      if ($(this).find(".col-pace").length === 0) {
-        // Insert pace after elevation column
-        const paceCell = $("<td class='view-col col-pace'></td>");
+      // Insert pace after elevation column
+      const paceCell = $("<td class='view-col col-pace'></td>");
 
-        if (activityType === "Run") {
-          paceCell.text(pace);
-          paceCell.css("display", "table-cell");
-          paceCell.css("text-align", "right");
-          paceCell.css("color", getPaceColor(pace));
-        }
-
-        $(this).find(".col-elev").after(paceCell);
+      if (activityType === "Run") {
+        paceCell.text(`${Math.floor(pace / 60)}:${(Math.round(pace % 60)).toString().padStart(2, "0")} min/km`);
+        paceCell.css("display", "table-cell");
+        paceCell.css("text-align", "right");
+        paceCell.css("color", getPaceColor(pace));
       }
-    });
 
-    return true; // Signal success
+      $(this).find(".col-elev").after(paceCell);
+    });
   }
 
-  function retryWithTimeout(maxRetries = 10, interval = 500) {
-    let retries = 0;
+  function setupTableObserver() {
+    // Wait for the table to be available in the DOM
+    const checkForTable = setInterval(function () {
+      const tableBody = $("table.activities tbody");
 
-    function attempt() {
-      if (processRows()) {
-        return; // Success
+      if (tableBody.length > 0) {
+        clearInterval(checkForTable);
+
+        const observer = new MutationObserver(function (mutations) {
+          processRows();
+        });
+
+        observer.observe(tableBody[0], {
+          childList: true,  // observe direct children changes (added/removed rows)
+          subtree: true     // observe deeper changes in row content
+        });
+
+        // Process initially loaded rows
+        processRows();
       }
-
-      retries++;
-      if (retries < maxRetries) {
-        setTimeout(attempt, interval);
-      } else {
-        console.log("Max retries reached, couldn't find rows");
-      }
-    }
-
-    attempt();
+    }, 300);
   }
 
   // Use jQuery's ready function to ensure jQuery is loaded
-  $(function() {
-    retryWithTimeout();
+  $(function () {
+    setupTableObserver();
   });
 })(jQuery);
